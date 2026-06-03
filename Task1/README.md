@@ -76,7 +76,7 @@ The GCC compiler converts high-level C code into machine-level instructions for 
 
 **Screenshot — GCC Output:**
 
-<img src="images/WhatsApp Image 2026-06-03 at 22.49.45.jpeg" alt="C Program" />
+<img src="images/WhatsApp Image 2026-06-03 at 22.49.45.jpeg" alt="C Program" width="800"/>
 
 
 ## Part B: RISC-V GCC Cross Compilation
