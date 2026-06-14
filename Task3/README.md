@@ -115,9 +115,8 @@ was reviewed successfully.
 
 The program continuously prints the VSD Squadron FPGA Mini banner using UART output routines.
 
-<img src="ImaGes/Screenshot 2026-06-13 151705.png" alt="Firmware Review Screenshot" width="800"/>
+<img src="ImaGes/Screenshot 2026-06-13 180000.png" alt="Firmware Review Screenshot" width="800"/>
 
-<img src="ImaGes/Screenshot 2026-06-13 152830.png" alt="Firmware Review Screenshot" width="800"/>
 ## Generating BRAM Firmware Image
 
 ```bash
@@ -130,7 +129,9 @@ Generated:
 riscv_logo.bram.hex
 ```
 
-<img src="ImaGes/Screenshot 2026-06-13 152830.png" alt="BRAM HEX Generation Screenshot" width="800"/>
+<img src="ImaGes/Screenshot 2026-06-13 151705.png" alt="Firmware Review Screenshot" width="800"/>
+
+<img src="ImaGes/Screenshot 2026-06-13 152830.png" alt="Firmware Review Screenshot" width="800"/>
 
 ## Generating Executable ELF
 
@@ -168,6 +169,10 @@ The firmware is designed for execution from FPGA BRAM using a custom linker scri
 
 ---
 **## Now We Do Cross compiling of this code in RISCV and Simulate with SPIKE**
+```bash
+riscv64-unknown-elf-gcc -O1 -mabi=lp64 -march=rv64i -o riscv_logo.o riscv_logo.c
+spike pk riscv_logo.o
+```
 
 <img src="ImaGes/image-1.png" alt="Spike Simulation Attempt Screenshot" width="800"/>
 
