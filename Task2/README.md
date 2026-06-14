@@ -44,10 +44,6 @@ The experiment demonstrates the complete flow from C source code to RISC-V machi
 
 The program calculates the summation of integers from 1 to 100.
 
-Mathematically:
-
-\sum_{i=1}^{100} i = 5050
-
 Expected Output:
 
 ```text
