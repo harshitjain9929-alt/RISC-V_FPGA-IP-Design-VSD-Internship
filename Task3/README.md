@@ -180,11 +180,6 @@ spike pk riscv_logo.o
 ---
 # Step 4: Local Development Environment (VM Setup)
 
-In addition to GitHub Codespaces, a local VSDSquadron Linux virtual machine environment was configured to prepare for future FPGA development tasks.
-
-The local environment provides direct access to FPGA development tools and hardware interfaces required for board-level implementation and testing.
-
-
 ## Repository Setup
 
 The VSDFPGA laboratory repository was cloned successfully in the local environment:
@@ -195,6 +190,123 @@ cd vsdfpga_labs/basicRISCV
 ```
 <img src="ImaGes/Screenshot 2026-06-14 134848.png" alt="Spike Simulation Attempt Screenshot" width="800"/>
 
+To prepare for FPGA hardware development and testing, a dedicated Linux Virtual Machine (VM) was set up. While GitHub Codespaces is suitable for software development and simulation, it cannot provide direct access to FPGA hardware connected through USB.
+
+## Why a Virtual Machine is Required
+
+### Limitations of GitHub Codespaces
+
+* Limited availability of FPGA-specific tools and package versions.
+* Some FPGA development packages may be missing or outdated.
+* No USB Passthrough support for physical FPGA boards.
+* Potential version mismatches between synthesis, place-and-route, and device support tools.
+
+### Benefits of a Dedicated Virtual Machine
+
+* Complete control over tool versions and dependencies.
+* Direct USB access to FPGA hardware.
+* Proper compatibility between Yosys, ABC, NextPNR, and IceStorm toolchains.
+* A stable environment for FPGA implementation and board-level testing.
+
+---
+
+## 4.1 Virtual Machine Setup(for Linux )
+
+A Linux Virtual Machine (Ubuntu 20.04 LTS or later) was configured for FPGA development.
+
+The required packages were installed using:
+
+```bash
+sudo apt-get update
+
+sudo apt-get install -y git vim autoconf automake autotools-dev curl \
+libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex \
+texinfo gperf libtool patchutils bc zlib1g-dev libexpat1-dev
+
+sudo apt-get install -y yosys nextpnr-ice40 fpga-icestorm iverilog
+
+sudo apt-get install -y gtkwave picocom
+```
+
+These packages provide the FPGA synthesis, place-and-route, simulation, and debugging environment required for future hardware tasks.
+
+---
+
+## 4.2 Repository Setup
+
+Both internship repositories were cloned inside the virtual machine:
+
+```bash
+cd ~
+
+git clone https://github.com/vsdip/vsd-riscv2.git
+git clone https://github.com/vsdip/vsdfpga_labs.git
+```
+
+This ensured that the same development workflow used in GitHub Codespaces was available locally.
+
+---
+
+## 4.3 RISC-V Toolchain Installation
+
+The SiFive RISC-V GCC toolchain was installed inside the virtual machine:
+
+```bash
+cd ~
+
+mkdir -p riscv_toolchain
+cd riscv_toolchain
+
+wget "https://static.dev.sifive.com/dev-tools/riscv64-unknown-elf-gcc-8.3.0-2019.08.0-x86_64-linux-ubuntu14.tar.gz"
+
+tar -xvzf riscv64-unknown-elf-gcc-*.tar.gz
+
+echo 'export PATH=$HOME/riscv_toolchain/riscv64-unknown-elf-gcc-8.3.0-2019.08.0-x86_64-linux-ubuntu14/bin:$PATH' >> ~/.bashrc
+
+source ~/.bashrc
+```
+
+Installation was verified using:
+
+```bash
+riscv64-unknown-elf-gcc --version
+```
+
+---
+
+## 4.4 Dockerfile Review
+
+The Dockerfile provided in the repository was reviewed as a reference document for environment setup and dependency management.
+
+Reference:
+
+```text
+https://raw.githubusercontent.com/vsdip/vsd-riscv2/refs/heads/main/.devcontainer/Dockerfile
+```
+
+### Important Note
+
+The Dockerfile was **not executed directly** using Docker. Instead, it was used to understand:
+
+* Required software packages
+* Development tool dependencies
+* Installation sequence
+* Environment configuration requirements
+
+All tools were installed natively inside the virtual machine using the commands provided above.
+
+---
+
+## Outcome
+
+A complete local FPGA development environment was successfully prepared. The virtual machine now contains the required RISC-V toolchain, FPGA development tools, simulation utilities, and laboratory repositories needed for upcoming FPGA implementation, IP integration, and hardware testing tasks.
+
+
+In addition to GitHub Codespaces, a local VSDSquadron Linux virtual machine environment was configured to prepare for future FPGA development tasks.
+
+The local environment provides direct access to FPGA development tools and hardware interfaces required for board-level implementation and testing.
+
+---
 ## FPGA Build Flow
 
 The RTL design was built locally using the provided RTL flow.
