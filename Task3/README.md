@@ -232,22 +232,9 @@ These packages provide the FPGA synthesis, place-and-route, simulation, and debu
 
 ---
 
-## 4.2 Repository Setup
-
-Both internship repositories were cloned inside the virtual machine:
-
-```bash
-cd ~
-
-git clone https://github.com/vsdip/vsd-riscv2.git
-git clone https://github.com/vsdip/vsdfpga_labs.git
-```
-
-This ensured that the same development workflow used in GitHub Codespaces was available locally.
-
 ---
 
-## 4.3 RISC-V Toolchain Installation
+## 4.2 RISC-V Toolchain Installation
 
 The SiFive RISC-V GCC toolchain was installed inside the virtual machine:
 
@@ -273,7 +260,17 @@ riscv64-unknown-elf-gcc --version
 ```
 
 ---
+## 4.3 Repository Setup
 
+Both internship repositories were cloned inside the virtual machine:
+
+```bash
+cd ~
+
+git clone https://github.com/vsdip/vsd-riscv2.git
+git clone https://github.com/vsdip/vsdfpga_labs.git
+```
+This ensured that the same development workflow used in GitHub Codespaces was available locally.
 ## 4.4 Dockerfile Review
 
 The Dockerfile provided in the repository was reviewed as a reference document for environment setup and dependency management.
