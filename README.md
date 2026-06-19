@@ -11,3 +11,5 @@
 ### Task 1: Compilation of C Program using GCC, SPIKE and RISC-V GCC Compiler
 
 ### Task 2: RISC-V Program Execution, Instruction-Level Debugging and Digital Design Concepts using SPIKE Simulator
+
+### Task 3: Environment Setup & RISC-V Reference Bring-Up
