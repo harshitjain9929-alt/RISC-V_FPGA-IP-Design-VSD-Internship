@@ -13,3 +13,6 @@
 ### Task 2: RISC-V Program Execution, Instruction-Level Debugging and Digital Design Concepts using SPIKE Simulator
 
 ### Task 3: Environment Setup & RISC-V Reference Bring-Up
+
+### Task 4: Design & Integrate a Memory-Mapped GPIO Output IP
+
