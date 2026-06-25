@@ -16,3 +16,5 @@
 
 ### Task 4: Design & Integrate a Memory-Mapped GPIO Output IP
 
+### Task-5: Multi-Register GPIO IP with Software Control
+
