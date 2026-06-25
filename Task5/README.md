@@ -24,11 +24,21 @@ This IP allows software to:
 
 ## Register Map
 
-| Offset | Register  | Address    | Description                            |
-|--------|-----------|------------|----------------------------------------|
-| 0x00   | GPIO_DATA | 0x00400020 | GPIO output data register              |
-| 0x04   | GPIO_DIR  | 0x00400040 | Direction register (1=output, 0=input) |
-| 0x08   | GPIO_READ | 0x00400080 | Readback register (mirrors GPIO_DATA)  |
+| Offset | Register  | Address      | Description                            |
+|--------|-----------|--------------|----------------------------------------|
+| 0x00   | GPIO_DATA | 0x00400020   | GPIO output data register              |
+| 0x04   | GPIO_DIR  | 0x00400024   | Direction register (1=output, 0=input) |
+| 0x08   | GPIO_READ | 0x00400028   | Readback register (mirrors GPIO_DATA)  |
+
+Base Address: `0x00400020` (same as Task-2, IO_GPIO_bit = 3)
+
+Address offsets are carried by `mem_addr[3:2]` → this 2-bit field selects which register inside the IP is being accessed:
+
+| Register  | mem_addr[3:2] | Final Address |
+|-----------|---------------|---------------|
+| GPIO_DATA | 2'b00         | 0x00400020    |
+| GPIO_DIR  | 2'b01         | 0x00400024    |
+| GPIO_READ | 2'b10         | 0x00400028    |
 
 ---
 
@@ -36,7 +46,7 @@ This IP allows software to:
 
 Reviewed Task-2 GPIO IP and identified where to add:
 - 3 registers: GPIO_DATA, GPIO_DIR, GPIO_READ
-- Address decoding via `mem_wordaddr` bit checking
+- Address offset decoding via `mem_addr[3:2]`
 - Internal signals defined clearly:
   - `gpio_reg` → holds output data written by software
   - `gpio_dir_reg` → holds direction config per pin
@@ -50,78 +60,81 @@ No coding done in this step — planning only.
 
 ### Address Decoding Explanation
 
-The SoC uses bit-based address decoding on `mem_wordaddr`:
+The SoC uses `IO_GPIO_bit = 3` to select the GPIO peripheral, and `mem_addr[3:2]` to select which register inside the IP:
 
 ```
 mem_wordaddr = mem_addr[31:2]   // word-aligned address
 isIO = mem_addr[22]             // selects IO space when bit 22 = 1
+gpio_offset = mem_addr[3:2]     // selects register within GPIO IP
 ```
 
-Each register is mapped to a unique bit position in `mem_wordaddr`:
-
-| Register  | Bit | wordaddr     | Final Address |
-|-----------|-----|--------------|---------------|
-| GPIO_DATA | 3   | 0x00100008   | 0x00400020    |
-| GPIO_DIR  | 4   | 0x00100010   | 0x00400040    |
-| GPIO_READ | 5   | 0x00100020   | 0x00400080    |
-
-When CPU writes to `0x00400020`, bit 3 of `mem_wordaddr` is set — RTL detects this and writes to `gpio_reg`. Same logic applies for DIR and READ registers.
+When CPU writes to `0x00400020`, `mem_wordaddr[3]=1` selects GPIO, and `mem_addr[3:2]=2'b00` selects GPIO_DATA. Similarly:
+- `0x00400024` → `mem_addr[3:2]=2'b01` → GPIO_DIR
+- `0x00400028` → `mem_addr[3:2]=2'b10` → GPIO_READ
 
 ### RTL Code (riscv_sim_backup.v)
 
 ```verilog
-// Address bit localparams
-localparam IO_GPIO_bit      = 3;
-localparam IO_GPIO_DIR_bit  = 4;
-localparam IO_GPIO_READ_bit = 5;
+// GPIO peripheral select
+localparam IO_GPIO_bit = 3;
+
+// Offset decoding — selects register within GPIO IP
+wire [1:0] gpio_offset = mem_addr[3:2];
 
 // Register declarations
 reg  [31:0] gpio_reg;
 reg  [31:0] gpio_dir_reg;
 wire [31:0] gpio_read_reg = gpio_reg; // READ mirrors DATA
 
-// GPIO_DATA write logic
+// GPIO write logic — single always block with offset case
 always @(posedge clk) begin
     if(isIO & mem_wstrb & mem_wordaddr[IO_GPIO_bit]) begin
-        gpio_reg <= mem_wdata;
+        case(gpio_offset)
+            2'b00: begin
+                gpio_reg <= mem_wdata;
+                $display("[%0t ns] GPIO_DATA WRITE = 0x%08h", $time, mem_wdata);
+            end
+            2'b01: begin
+                gpio_dir_reg <= mem_wdata;
+                $display("[%0t ns] GPIO_DIR WRITE = 0x%08h", $time, mem_wdata);
+            end
+            default: ;
+        endcase
     end
 end
 
-// GPIO_DIR write logic
-always @(posedge clk) begin
-    if(isIO & mem_wstrb & mem_wordaddr[IO_GPIO_DIR_bit]) begin
-        gpio_dir_reg <= mem_wdata;
-    end
-end
-
-// IO readback mux
-assign IO_rdata =
-    mem_wordaddr[IO_GPIO_bit]      ? gpio_reg      :
-    mem_wordaddr[IO_GPIO_DIR_bit]  ? gpio_dir_reg  :
-    mem_wordaddr[IO_GPIO_READ_bit] ? gpio_read_reg :
-    ... ;
+// IO readback mux — offset-based register selection
+wire [31:0] IO_rdata =
+    mem_wordaddr[IO_UART_CNTL_bit] ? { 22'b0, !uart_ready, 9'b0} :
+    mem_wordaddr[IO_GPIO_bit]      ? (gpio_offset == 2'b00 ? gpio_reg     :
+                                      gpio_offset == 2'b01 ? gpio_dir_reg :
+                                      gpio_offset == 2'b10 ? gpio_read_reg:
+                                      32'b0) :
+    32'b0;
 ```
 
 ### Clean RTL Structure
 
 - All register writes use synchronous `always @(posedge clk)` blocks — no latches
-- Each register has its own always block — no unintended sharing
+- Single always block with `case(gpio_offset)` for clean register selection
 - `gpio_read_reg` is a `wire` not a `reg` — avoids needing a separate write transaction
 - Clear separation between write logic and read mux
 
-<img src="imagEs/Screenshot 2026-06-25 104619.png" alt="RTL implementation screenshot" width="700">
-
+<img src="imagEs/Screenshot 2026-06-26 002615.png" alt="RTL implementation screenshot" width="700">
+<img src="imagEs/Screenshot 2026-06-26 002648.png" alt="SoC integration screenshot" width="700">
 ---
 
 ## Step 3: SoC Integration
 
 - All 3 registers integrated directly inside the SOC module in `riscv_sim_backup.v`
 - `isIO` signal (`mem_addr[22] = 1`) correctly gates all GPIO register accesses
-- `mem_wordaddr` bit checking routes each access to the correct register
+- `mem_wordaddr[IO_GPIO_bit]` selects GPIO peripheral
+- `gpio_offset = mem_addr[3:2]` routes access to correct register inside IP
 - GPIO signals (`gpio_reg`, `gpio_dir_reg`) available inside SOC for future use
 - Integration flow consistent with Task-2 — no new top-level ports needed
 
-<<img src="imagEs/Screenshot 2026-06-25 105319.png" alt="SoC integration screenshot" width="700">
+
+
 ---
 
 ## Step 4: Software Validation
@@ -131,8 +144,8 @@ assign IO_rdata =
 ```c
 #include <stdint.h>
 #define GPIO_DATA  (*((volatile uint32_t *)0x00400020))
-#define GPIO_DIR   (*((volatile uint32_t *)0x00400040))
-#define GPIO_READ  (*((volatile uint32_t *)0x00400080))
+#define GPIO_DIR   (*((volatile uint32_t *)0x00400024))
+#define GPIO_READ  (*((volatile uint32_t *)0x00400028))
 #define UART       (*((volatile uint32_t *)0x00400008))
 
 void uart_putchar(char c) { UART = c; }
@@ -159,18 +172,18 @@ int main() {
     return 0;
 }
 ```
-<img src="imagEs/Screenshot 2026-06-25 214511.png" alt="SoC integration screenshot" width="700">
 
+<img src="imagEs/Screenshot 2026-06-26 001441.png" alt="Firmware screenshot" width="500">
 
 ### End-to-End Flow (Software → IP → Signal)
 
-1. **Software** writes `0xFFFFFFFF` to `GPIO_DIR` address `0x00400040`
-2. **CPU** generates store instruction → `mem_addr = 0x00400040`, `mem_wdata = 0xFFFFFFFF`
-3. **RTL** detects `isIO=1` and `mem_wordaddr[4]=1` → writes to `gpio_dir_reg`
+1. **Software** writes `0xFFFFFFFF` to `GPIO_DIR` address `0x00400024`
+2. **CPU** generates store instruction → `mem_addr = 0x00400024`, `mem_wdata = 0xFFFFFFFF`
+3. **RTL** detects `isIO=1` and `mem_wordaddr[3]=1` → GPIO selected, `gpio_offset=2'b01` → writes to `gpio_dir_reg`
 4. **Software** writes `0xABCD1234` to `GPIO_DATA` address `0x00400020`
-5. **RTL** detects `mem_wordaddr[3]=1` → writes to `gpio_reg`
-6. **Software** reads from `GPIO_READ` address `0x00400080`
-7. **RTL** detects `mem_wordaddr[5]=1` → returns `gpio_read_reg` (which is `gpio_reg`)
+5. **CPU** generates store → `mem_addr = 0x00400020`, `gpio_offset=2'b00` → writes to `gpio_reg`
+6. **Software** reads from `GPIO_READ` address `0x00400028`
+7. **RTL** detects `gpio_offset=2'b10` → returns `gpio_read_reg` (which mirrors `gpio_reg`)
 8. **CPU** receives `0xABCD1234` → readback matches → `READ:PASS`
 
 ### Compile & Simulate
@@ -179,21 +192,22 @@ int main() {
 # Compile firmware
 cd ~/vsdfpga_labs/basicRISCV/Firmware && make test_gpio3.bram.hex
 ```
-<img src="imagEs/Screenshot 2026-06-25 210147.png" alt="SoC integration screenshot" width="700">
+
+<img src="imagEs/Screenshot 2026-06-26 001406.png" alt="Firmware compilation screenshot" width="700">
 
 ```bash
 # Simulate
 cd ~/vsdfpga_labs/basicRISCV/RTL
-iverilog -D BENCH -o sim.out tb.v riscv_sim_backup.v prim_stubs.v
+iverilog -D BENCH -o sim.out prim_stubs.v riscv_sim_backup.v tb.v
 vvp sim.out 2>&1
 ```
 
 ### Simulation Output
 
 ```
-[5250000 ns]  GPIO_DIR WRITE = 0xffffffff
+[5250000 ns]  GPIO_DIR  WRITE = 0xffffffff
 DIR:PASS
-[91938000 ns] GPIO_REG WRITE = 0xabcd1234
+[91938000 ns] GPIO_DATA WRITE = 0xabcd1234
 DATA:PASS
 READ:PASS
 gpio_reg      = 0xabcd1234
@@ -201,7 +215,7 @@ gpio_dir_reg  = 0xffffffff
 gpio_read_reg = 0xabcd1234
 ```
 
-<img src="imagEs/Screenshot 2026-06-25 210343.png" alt="Simulation terminal output showing DIR:PASS DATA:PASS READ:PASS" width="500">
+<img src="imagEs/Screenshot 2026-06-26 001330.png" alt="Simulation terminal output showing DIR:PASS DATA:PASS READ:PASS" width="500">
 
 ---
 
@@ -209,31 +223,39 @@ gpio_read_reg = 0xabcd1234
 
 Signals verified in GTKWave after simulation:
 
-| Signal           | Expected Value | Result   |
-|------------------|----------------|----------|
-| clk              | toggling       | ✅ PASS  |
-| resetn           | 1 (active)     | ✅ PASS  |
-| gpio_reg[31:0]   | 0xABCD1234     | ✅ PASS  |
-| gpio_dir_reg[31:0]| 0xFFFFFFFF    | ✅ PASS  |
-| gpio_read_reg[31:0]| 0xABCD1234   | ✅ PASS  |
+| Signal              | Expected Value | Result  |
+|---------------------|----------------|---------|
+| clk                 | toggling       | ✅ PASS |
+| resetn              | 1 (active)     | ✅ PASS |
+| gpio_reg[31:0]      | 0xABCD1234     | ✅ PASS |
+| gpio_dir_reg[31:0]  | 0xFFFFFFFF     | ✅ PASS |
+| gpio_read_reg[31:0] | 0xABCD1234     | ✅ PASS |
 
-<img src="imagEs/Screenshot 2026-06-25 210758.png" alt="RTL implementation screenshot" width="700">
+<img src="imagEs/Screenshot 2026-06-25 210758.png" alt="GTKWave waveform screenshot" width="700">
 
-<img src="imagEs/Screenshot 2026-06-25 214235.png" alt="RTL implementation screenshot" width="700">
+<img src="imagEs/Screenshot 2026-06-26 000923.png" alt="GTKWave zoomed screenshot" width="700">
 
 ---
 
 ## How Address Offsets Are Decoded
 
-The SoC does NOT use traditional base+offset decoding. Instead it uses **bit-position decoding** on `mem_wordaddr`:
+The GPIO IP uses **two-level decoding**:
 
-- Every IO peripheral is assigned a unique bit number
-- When CPU accesses an address, that address maps to a specific bit being set in `mem_wordaddr`
-- RTL checks `mem_wordaddr[bit]` to identify which peripheral is being accessed
+**Level 1 — Peripheral selection** (SoC level):
+```
+mem_wordaddr[IO_GPIO_bit] = mem_wordaddr[3]
+→ Selects GPIO peripheral when CPU accesses 0x004000XX range
+```
 
-Example:
-- Address `0x00400040` → `mem_wordaddr = 0x00100010` → bit 4 is set → GPIO_DIR selected
-- This is fast, simple, and collision-free as long as each peripheral gets a unique bit
+**Level 2 — Register selection** (inside GPIO IP):
+```
+gpio_offset = mem_addr[3:2]
+2'b00 → GPIO_DATA  (0x00400020)
+2'b01 → GPIO_DIR   (0x00400024)
+2'b10 → GPIO_READ  (0x00400028)
+```
+
+This is standard offset-based register decoding used in real SoC peripherals — the base address selects the peripheral, and the offset selects the register within it.
 
 ---
 
@@ -251,9 +273,9 @@ Example:
 
 1. **`gpio_read_reg` as wire instead of reg** — avoids needing firmware to explicitly write to READ register. READ always reflects current DATA value automatically.
 
-2. **Bit-based address decoding** — inherited from Task-2 SoC architecture. Simple and consistent with existing peripheral decode scheme.
+2. **Offset-based decoding via `mem_addr[3:2]`** — follows standard peripheral register map convention. Consecutive addresses (0x20, 0x24, 0x28) make firmware intuitive and match task specification exactly.
 
-3. **Separate always blocks per register** — keeps logic clean and independent. No risk of one register's write logic interfering with another.
+3. **Single always block with case statement** — cleaner than separate always blocks per register. One block handles all GPIO writes with clear offset-based selection.
 
 4. **`-D BENCH` compile flag** — required to initialize `RegisterBank` to zero in simulation. Without it, CPU register file starts with X values causing X propagation into `mem_wdata`.
 
@@ -269,24 +291,24 @@ Example:
 | `RTL/tb.v`               | Testbench |
 | `RTL/prim_stubs.v`       | iCE40 primitive stubs for simulation |
 
+---
+
 ## Results Summary
 
 The Multi-Register GPIO Control IP was successfully designed, implemented, and integrated into the existing RISC-V SoC. The simple GPIO peripheral developed in Task-2 was extended into a realistic software-controlled GPIO subsystem by introducing three dedicated memory-mapped registers: **GPIO_DATA**, **GPIO_DIR**, and **GPIO_READ**.
 
 The processor successfully configured GPIO direction, updated GPIO output values, and verified the written data through the readback register. Simulation results confirmed correct address decoding, register updates, CPU bus transactions, and end-to-end communication between software and hardware.
 
-| Validation Item | Status |
-|-----------------|--------|
-| GPIO_DATA Register | ✅ PASS |
-| GPIO_DIR Register | ✅ PASS |
-| GPIO_READ Register | ✅ PASS |
-| Address Decoding | ✅ PASS |
-| CPU Bus Communication | ✅ PASS |
-| Firmware Execution | ✅ PASS |
-| UART Verification | ✅ PASS |
-| GTKWave Verification | ✅ PASS |
-
-
+| Validation Item        | Status   |
+|------------------------|----------|
+| GPIO_DATA Register     | ✅ PASS  |
+| GPIO_DIR Register      | ✅ PASS  |
+| GPIO_READ Register     | ✅ PASS  |
+| Address Offset Decoding| ✅ PASS  |
+| CPU Bus Communication  | ✅ PASS  |
+| Firmware Execution     | ✅ PASS  |
+| UART Verification      | ✅ PASS  |
+| GTKWave Verification   | ✅ PASS  |
 
 ---
 
@@ -298,7 +320,7 @@ Key learning outcomes include:
 
 - Multi-register peripheral architecture.
 - Register map design and organization.
-- Bit-based address decoding.
+- Offset-based address decoding using `mem_addr[3:2]`.
 - Software-controlled GPIO peripherals.
 - Memory-mapped I/O communication.
 - RTL implementation using synchronous sequential logic.
@@ -313,10 +335,10 @@ Key learning outcomes include:
 ## Design Highlights
 
 - Three independent 32-bit registers (**GPIO_DATA**, **GPIO_DIR**, **GPIO_READ**).
-- Separate synchronous write logic for each register.
-- Automatic GPIO readback through GPIO_READ.
-- Clean and scalable bit-based address decoding.
-- Independent RTL blocks with no inferred latches.
+- Single always block with `case(gpio_offset)` for clean write logic.
+- Automatic GPIO readback through GPIO_READ wire.
+- Standard offset-based address decoding (`mem_addr[3:2]`).
+- No inferred latches — fully synchronous design.
 - Modular architecture suitable for future SoC expansion.
 
 ---
@@ -325,10 +347,6 @@ Key learning outcomes include:
 
 Task-3 successfully upgraded the basic GPIO peripheral from Task-2 into a realistic **Multi-Register GPIO Control IP** capable of software-controlled direction configuration, GPIO output control, and register readback.
 
-The peripheral was integrated into the existing RISC-V SoC using the same memory-mapped bus architecture without modifying the processor. Firmware running on the RISC-V core successfully configured GPIO direction, wrote output values, and verified correct operation through the readback register.
+The peripheral was integrated into the existing RISC-V SoC using standard offset-based address decoding (`mem_addr[3:2]`), placing all three registers at consecutive addresses (`0x00400020`, `0x00400024`, `0x00400028`). Firmware running on the RISC-V core successfully configured GPIO direction, wrote output values, and verified correct operation through the readback register.
 
 Simulation results, UART messages, and GTKWave waveforms confirmed correct address decoding, register updates, CPU bus transactions, and software-to-hardware communication. This task strengthened understanding of register-level RTL design, memory-mapped I/O, SoC integration, firmware interaction, and simulation-based verification, closely reflecting the workflow followed in modern FPGA and ASIC development.
-
----
-
-
